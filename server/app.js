@@ -204,14 +204,14 @@ function seed() {
 
   // 商品
   ;[
-    ['iPhone 15 Pro', 'P001', 11, 1, 1, '台', 8999, 6500, 150, 20, '手机', '1'],
-    ['MacBook Pro', 'P002', 12, 1, 1, '台', 14999, 11000, 80, 10, '笔记本', '1'],
-    ['A4纸', 'P005', 21, 1, 1, '箱', 89, 55, 200, 30, '纸张', '1'],
-    ['中性笔', 'P006', 22, 2, 1, '支', 3, 1, 1000, 200, '笔', '1'],
-    ['iPhone', 'P001-2', 11, 1, 2, '台', 8999, 6500, 100, 20, '手机', '1']
+    ['iPhone 15 Pro', 'P001', '', 1, 11, 1, 1, '台', 8999, 6500, 150, 20, '手机', '1'],
+    ['MacBook Pro', 'P002', '', 1, 12, 1, 1, '台', 14999, 11000, 80, 10, '笔记本', '1'],
+    ['A4纸', 'P005', '', 1, 21, 1, 1, '箱', 89, 55, 200, 30, '纸张', '1'],
+    ['中性笔', 'P006', '', 1, 22, 2, 1, '支', 3, 1, 1000, 200, '笔', '1'],
+    ['iPhone', 'P001-2', '', 1, 11, 1, 2, '台', 8999, 6500, 100, 20, '手机', '1']
   ].forEach((p) =>
     R(
-      'INSERT INTO products(name,code,category_id,warehouse_id,shop_id,unit,price,cost,stock,min_stock,description,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+      'INSERT INTO products(name,code,brand,spec,category_id,warehouse_id,shop_id,unit,price,cost,stock,min_stock,description,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
       p
     )
   )
@@ -533,13 +533,19 @@ app.get('/api/products/all', auth, (req, res) => {
       )
   ok(
     res,
-    r.map((x) => ({
-      ...x,
-      categoryId: x.category_id,
-      warehouseId: x.warehouse_id,
-      shopId: x.shop_id,
-      minStock: x.min_stock
-    }))
+    r.map((x) => {
+      const pr = Q('SELECT * FROM product_prices WHERE product_id=?', [x.id])
+      const cv = Q('SELECT * FROM unit_conversions WHERE product_id=?', [x.id])
+      return {
+        ...x,
+        categoryId: x.category_id,
+        warehouseId: x.warehouse_id,
+        shopId: x.shop_id,
+        minStock: x.min_stock,
+        prices: pr,
+        unitConversions: cv
+      }
+    })
   )
 })
 
@@ -547,6 +553,8 @@ app.post('/api/products', auth, (req, res) => {
   const {
     name,
     code,
+    brand,
+    spec,
     categoryId,
     warehouseId,
     shopId,
@@ -564,10 +572,12 @@ app.post('/api/products', auth, (req, res) => {
   if (Q1('SELECT * FROM products WHERE code=? AND shop_id=?', [code, sid]))
     return fail(res, 400, '商品编码已存在')
   R(
-    'INSERT INTO products(name,code,category_id,warehouse_id,shop_id,unit,price,cost,stock,min_stock,description,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+    'INSERT INTO products(name,code,brand,spec,category_id,warehouse_id,shop_id,unit,price,cost,stock,min_stock,description,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [
       name,
       code,
+      brand || '',
+      spec || 1,
       categoryId || null,
       warehouseId || null,
       sid,
@@ -604,6 +614,8 @@ app.put('/api/products/:id', auth, (req, res) => {
   const {
     name,
     code,
+    brand,
+    spec,
     categoryId,
     warehouseId,
     shopId,
@@ -618,10 +630,12 @@ app.put('/api/products/:id', auth, (req, res) => {
     unitConversions
   } = req.body
   R(
-    'UPDATE products SET name=?,code=?,category_id=?,warehouse_id=?,shop_id=?,unit=?,price=?,cost=?,stock=?,min_stock=?,description=?,status=? WHERE id=?',
+    'UPDATE products SET name=?,code=?,brand=?,spec=?,category_id=?,warehouse_id=?,shop_id=?,unit=?,price=?,cost=?,stock=?,min_stock=?,description=?,status=? WHERE id=?',
     [
       name,
       code,
+      brand || '',
+      spec || 1,
       categoryId || null,
       warehouseId || null,
       shopId,
@@ -779,7 +793,7 @@ app.delete('/api/warehouses/:id', auth, (req, res) => {
 
 // ========== 采购 ==========
 app.get('/api/purchases', auth, (req, res) => {
-  const { orderNo, customerId, shopId, status, current = 1, size = 10 } = req.query
+  const { orderNo, customerId, shopId, status, categoryId, current = 1, size = 10 } = req.query
   let w = 'WHERE 1=1',
     p = []
   const me = Q1('SELECT * FROM users WHERE id=?', [req.user.userId])
@@ -802,6 +816,10 @@ app.get('/api/purchases', auth, (req, res) => {
   if (status) {
     w += ' AND po.status=?'
     p.push(status)
+  }
+  if (categoryId) {
+    w += ' AND po.id IN (SELECT pi.order_id FROM purchase_items pi LEFT JOIN products pr ON pi.product_id=pr.id WHERE pr.category_id=?)'
+    p.push(+categoryId)
   }
   const t = Q1('SELECT COUNT(*) as c FROM purchase_orders po ' + w, p)
   const orders = Q(
@@ -862,14 +880,16 @@ app.post('/api/purchases', auth, (req, res) => {
       salesperson || ''
     ]
   )
-  const o = Q1('SELECT last_insert_rowid() as id')
-  if (o)
+  // 获取新插入的订单ID
+  const o = Q1('SELECT id FROM purchase_orders WHERE order_no=?', [orderNo])
+  if (o && items && items.length > 0) {
     items.forEach((i) =>
       R(
         'INSERT INTO purchase_items(order_id,product_id,warehouse_id,quantity,unit,price,amount) VALUES(?,?,?,?,?,?,?)',
         [o.id, i.productId, i.warehouseId || null, i.quantity, i.unit || '', i.price, i.amount]
       )
     )
+  }
   ok(res, { id: o ? o.id : 0, orderNo }, '创建成功')
 })
 
@@ -908,7 +928,7 @@ app.delete('/api/purchases/:id', auth, (req, res) => {
 
 // ========== 销售 ==========
 app.get('/api/sales', auth, (req, res) => {
-  const { orderNo, customerId, shopId, status, current = 1, size = 10 } = req.query
+  const { orderNo, customerId, shopId, status, categoryId, current = 1, size = 10 } = req.query
   let w = 'WHERE 1=1',
     p = []
   const me = Q1('SELECT * FROM users WHERE id=?', [req.user.userId])
@@ -931,6 +951,10 @@ app.get('/api/sales', auth, (req, res) => {
   if (status) {
     w += ' AND so.status=?'
     p.push(status)
+  }
+  if (categoryId) {
+    w += ' AND so.id IN (SELECT si.order_id FROM sales_items si LEFT JOIN products pr ON si.product_id=pr.id WHERE pr.category_id=?)'
+    p.push(+categoryId)
   }
   const t = Q1('SELECT COUNT(*) as c FROM sales_orders so ' + w, p)
   const orders = Q(
@@ -991,14 +1015,16 @@ app.post('/api/sales', auth, (req, res) => {
       salesperson || ''
     ]
   )
-  const o = Q1('SELECT last_insert_rowid() as id')
-  if (o)
+  // 获取新插入的订单ID
+  const o = Q1('SELECT id FROM sales_orders WHERE order_no=?', [orderNo])
+  if (o && items && items.length > 0) {
     items.forEach((i) =>
       R(
         'INSERT INTO sales_items(order_id,product_id,warehouse_id,quantity,unit,price,amount) VALUES(?,?,?,?,?,?,?)',
         [o.id, i.productId, i.warehouseId || null, i.quantity, i.unit || '', i.price, i.amount]
       )
     )
+  }
   ok(res, { id: o ? o.id : 0, orderNo }, '创建成功')
 })
 
@@ -1276,13 +1302,13 @@ app.get('/api/dashboard/purchase-stats', auth, (req, res) => {
 
   // 主要供应商
   const topSuppliers = Q(`
-    SELECT po.supplier_id as supplierId, c.name as supplierName,
+    SELECT po.customer_id as supplierId, c.name as supplierName,
            COUNT(*) as orderCount, SUM(po.total_amount) as totalAmount
     FROM purchase_orders po
-    LEFT JOIN customers c ON po.supplier_id = c.id
+    LEFT JOIN customers c ON po.customer_id = c.id
     WHERE po.status = 'completed'
     ${isSuper ? '' : ' AND po.shop_id = ' + req.user.shopId}
-    GROUP BY po.supplier_id
+    GROUP BY po.customer_id
     ORDER BY totalAmount DESC
     LIMIT 5
   `)

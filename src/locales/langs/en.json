@@ -174,7 +174,7 @@
     "rule": {
       "confirmPasswordRequired": "Please enter your password again",
       "passwordMismatch": "The two passwords are inconsistent!",
-      "usernameLength": "The length is 3 to 20 characters",
+      "usernameLength": "The length is 1 to 100 characters",
       "passwordLength": "The password length cannot be less than 6 digits",
       "agreementRequired": "Please agree to the privacy policy"
     },

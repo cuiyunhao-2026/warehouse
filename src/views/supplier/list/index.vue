@@ -37,10 +37,20 @@
             <ArtSvgIcon icon="ri:add-line" class="mr-1" />
             新增供应商
           </ElButton>
+          <ElButton
+            v-if="selectedRows.length > 0"
+            type="danger"
+            @click="handleBatchDelete"
+            class="ml-2"
+          >
+            <ArtSvgIcon icon="ri:delete-bin-line" class="mr-1" />
+            批量删除 ({{ selectedRows.length }})
+          </ElButton>
         </template>
       </ArtTableHeader>
 
-      <ElTable :data="tableData" v-loading="loading" border stripe>
+      <ElTable :data="tableData" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+        <ElTableColumn type="selection" width="50" />
         <ElTableColumn prop="name" label="供应商名称" min-width="180" show-overflow-tooltip />
         <ElTableColumn prop="contact" label="联系人" width="100" />
         <ElTableColumn prop="phone" label="联系电话" width="130" />
@@ -116,7 +126,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, onMounted } from 'vue'
-  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import {
     fetchGetSupplierList,
     fetchAddSupplier,
@@ -131,6 +141,7 @@
   const dialogVisible = ref(false)
   const dialogTitle = ref('新增供应商')
   const formRef = ref<FormInstance>()
+  const selectedRows = ref<any[]>([])
 
   const searchForm = reactive({
     name: '',
@@ -221,6 +232,40 @@
     dialogVisible.value = true
   }
 
+  const handleSelectionChange = (rows: any[]) => {
+    selectedRows.value = rows
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedRows.value.length === 0) {
+      ElMessage.warning('请先选择供应商')
+      return
+    }
+    try {
+      await ElMessageBox.confirm(
+        `确定要批量删除 ${selectedRows.value.length} 个供应商吗？此操作不可恢复！`,
+        '批量删除确认',
+        { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+
+    loading.value = true
+    try {
+      for (const row of selectedRows.value) {
+        await fetchDeleteSupplier(row.id)
+      }
+      ElMessage.success(`成功删除 ${selectedRows.value.length} 个供应商`)
+      selectedRows.value = []
+      loadData()
+    } catch {
+      ElMessage.error('批量删除失败')
+    } finally {
+      loading.value = false
+    }
+  }
+
   const handleDelete = async (id: number) => {
     try {
       await fetchDeleteSupplier(id)
@@ -282,5 +327,9 @@
 
   .mr-1 {
     margin-right: 4px;
+  }
+
+  .ml-2 {
+    margin-left: 8px;
   }
 </style>

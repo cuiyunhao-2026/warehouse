@@ -194,6 +194,7 @@
   height: var(--art-full-height);
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
 
   @media (max-width: 640px) {
     height: auto;

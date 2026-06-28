@@ -88,24 +88,23 @@
         <ElTableColumn type="selection" width="55" />
         <ElTableColumn prop="code" label="商品编码" width="120" />
         <ElTableColumn prop="name" label="商品名称" min-width="150" show-overflow-tooltip />
+        <ElTableColumn prop="brand" label="品牌" width="90" />
+        <ElTableColumn prop="spec" label="规格/箱" width="80" align="center" />
         <ElTableColumn prop="categoryName" label="分类" width="100" />
         <ElTableColumn prop="warehouseName" label="所在仓库" width="100" />
         <ElTableColumn prop="unit" label="基本单位" width="80" align="center" />
-        <ElTableColumn prop="price" label="零售价" width="100" align="right">
+        <ElTableColumn prop="price" label="箱价" width="100" align="right">
           <template #default="{ row }">¥{{ row.price?.toFixed(2) }}</template>
-        </ElTableColumn>
-        <ElTableColumn prop="cost" label="成本价" width="100" align="right">
-          <template #default="{ row }">¥{{ row.cost?.toFixed(2) }}</template>
         </ElTableColumn>
         <ElTableColumn prop="stock" label="库存" width="80" align="center">
           <template #default="{ row }">
             <span :class="{ 'danger-text': row.stock <= row.minStock }">{{ row.stock }}</span>
           </template>
         </ElTableColumn>
-        <ElTableColumn label="多价格" width="120">
+        <ElTableColumn label="多价格" width="180">
           <template #default="{ row }">
             <ElTag v-for="p in row.prices" :key="p.id" size="small" class="mr-1 mb-1">
-              {{ p.price_name }}:¥{{ p.price }}
+              {{ p.price_name }}:¥{{ p.price?.toFixed(2) }}
             </ElTag>
           </template>
         </ElTableColumn>
@@ -192,7 +191,17 @@
           </ElCol>
         </ElRow>
         <ElRow :gutter="20">
-          <ElCol :span="8">
+          <ElCol :span="6">
+            <ElFormItem label="品牌" prop="brand">
+              <ElInput v-model="formData.brand" placeholder="请输入品牌" />
+            </ElFormItem>
+          </ElCol>
+          <ElCol :span="6">
+            <ElFormItem label="规格(个/箱)" prop="spec">
+              <ElInputNumber v-model="formData.spec" :min="1" style="width: 100%" />
+            </ElFormItem>
+          </ElCol>
+          <ElCol :span="6">
             <ElFormItem label="基本单位" prop="unit">
               <ElSelect v-model="formData.unit" placeholder="请选择单位" style="width: 100%">
                 <ElOption
@@ -204,14 +213,9 @@
               </ElSelect>
             </ElFormItem>
           </ElCol>
-          <ElCol :span="8">
-            <ElFormItem label="零售价" prop="price">
+          <ElCol :span="6">
+            <ElFormItem label="箱价" prop="price">
               <ElInputNumber v-model="formData.price" :min="0" :precision="2" style="width: 100%" />
-            </ElFormItem>
-          </ElCol>
-          <ElCol :span="8">
-            <ElFormItem label="成本价" prop="cost">
-              <ElInputNumber v-model="formData.cost" :min="0" :precision="2" style="width: 100%" />
             </ElFormItem>
           </ElCol>
         </ElRow>
@@ -359,6 +363,8 @@
     id: undefined as number | undefined,
     code: '',
     name: '',
+    brand: '',
+    spec: 1,
     categoryId: undefined as number | undefined,
     warehouseId: undefined as number | undefined,
     unit: '',
@@ -454,6 +460,8 @@
       id: undefined,
       code: '',
       name: '',
+      brand: '',
+      spec: 1,
       categoryId: undefined,
       warehouseId: undefined,
       unit: '',
@@ -463,7 +471,7 @@
       minStock: 0,
       description: '',
       status: '1',
-      prices: [{ price_name: '零售价', price: 0, is_default: 1 }],
+      prices: [{ price_name: '箱价', price: 0, is_default: 1 }],
       unitConversions: []
     })
     dialogVisible.value = true
@@ -473,7 +481,9 @@
     dialogTitle.value = '编辑商品'
     Object.assign(formData, {
       ...row,
-      prices: row.prices || [{ price_name: '零售价', price: row.price, is_default: 1 }],
+      brand: row.brand || '',
+      spec: row.spec || 1,
+      prices: row.prices && row.prices.length > 0 ? row.prices : [{ price_name: '箱价', price: row.price, is_default: 1 }],
       unitConversions: row.unitConversions || []
     })
     dialogVisible.value = true

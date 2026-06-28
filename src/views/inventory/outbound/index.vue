@@ -75,10 +75,19 @@
       <template #header>
         <div class="card-header">
           <span>最近出库记录</span>
+          <ElButton
+            v-if="selectedLogs.length > 0"
+            type="danger"
+            size="small"
+            @click="handleBatchDeleteLog"
+          >
+            批量删除 ({{ selectedLogs.length }})
+          </ElButton>
         </div>
       </template>
 
-      <ElTable :data="recentLogs" border stripe>
+      <ElTable :data="recentLogs" border stripe @selection-change="handleLogSelectionChange">
+        <ElTableColumn type="selection" width="50" />
         <ElTableColumn prop="productName" label="商品名称" min-width="120" />
         <ElTableColumn prop="quantity" label="出库数量" width="100" align="center" />
         <ElTableColumn prop="beforeStock" label="出库前库存" width="100" align="center" />
@@ -89,10 +98,7 @@
           <template #default="{ row }">
             <ElPopconfirm title="确定删除该记录吗？" @confirm="handleDeleteLog(row.id)">
               <template #reference>
-                <ElButton type="danger" link size="small">
-                  <ArtSvgIcon icon="ri:delete-bin-line" class="mr-1" />
-                  删除
-                </ElButton>
+                <ElButton type="danger" link size="small">删除</ElButton>
               </template>
             </ElPopconfirm>
           </template>
@@ -104,7 +110,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, onMounted } from 'vue'
-  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import {
     fetchGetAllProducts,
     fetchOutbound,
@@ -119,6 +125,7 @@
   const productList = ref<any[]>([])
   const selectedProduct = ref<any>(null)
   const recentLogs = ref<any[]>([])
+  const selectedLogs = ref<any[]>([])
 
   const formData = reactive({
     productId: undefined as number | undefined,
@@ -174,6 +181,33 @@
         submitLoading.value = false
       }
     })
+  }
+
+  const handleLogSelectionChange = (rows: any[]) => {
+    selectedLogs.value = rows
+  }
+
+  const handleBatchDeleteLog = async () => {
+    if (selectedLogs.value.length === 0) return
+    try {
+      await ElMessageBox.confirm(
+        `确定要批量删除 ${selectedLogs.value.length} 条记录吗？`,
+        '批量删除确认',
+        { type: 'warning', confirmButtonText: '确定', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+    try {
+      for (const row of selectedLogs.value) {
+        await fetchDeleteInventoryLog(row.id)
+      }
+      ElMessage.success(`成功删除 ${selectedLogs.value.length} 条记录`)
+      selectedLogs.value = []
+      loadRecentLogs()
+    } catch {
+      ElMessage.error('批量删除失败')
+    }
   }
 
   const handleDeleteLog = async (id: number) => {

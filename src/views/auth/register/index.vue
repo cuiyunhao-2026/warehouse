@@ -99,8 +99,8 @@
     agreement: boolean
   }
 
-  const USERNAME_MIN_LENGTH = 3
-  const USERNAME_MAX_LENGTH = 20
+  const USERNAME_MIN_LENGTH = 1
+  const USERNAME_MAX_LENGTH = 100
   const PASSWORD_MIN_LENGTH = 6
   const REDIRECT_DELAY = 1000
 

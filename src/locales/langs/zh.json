@@ -174,7 +174,7 @@
     "rule": {
       "confirmPasswordRequired": "请再次输入密码",
       "passwordMismatch": "两次输入密码不一致!",
-      "usernameLength": "长度在 3 到 20 个字符",
+      "usernameLength": "长度在 1 到 100 个字符",
       "passwordLength": "密码长度不能小于6位",
       "agreementRequired": "请同意隐私协议"
     },

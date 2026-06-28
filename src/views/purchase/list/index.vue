@@ -17,6 +17,16 @@
             />
           </ElSelect>
         </ElFormItem>
+        <ElFormItem label="商品分类">
+          <ElSelect v-model="searchForm.categoryId" placeholder="请选择分类" clearable>
+            <ElOption
+              v-for="category in categoryList"
+              :key="category.id"
+              :label="category.name"
+              :value="category.id"
+            />
+          </ElSelect>
+        </ElFormItem>
         <ElFormItem label="状态">
           <ElSelect v-model="searchForm.status" placeholder="请选择状态" clearable>
             <ElOption label="待处理" value="pending" />
@@ -184,7 +194,8 @@
     fetchGetPurchaseOrderList,
     fetchUpdatePurchaseOrderStatus,
     fetchDeletePurchaseOrder,
-    fetchGetAllCustomers
+    fetchGetAllCustomers,
+    getAllCategories
   } from '@/api/inventory'
   import { useRouter } from 'vue-router'
   import * as XLSX from 'xlsx'
@@ -196,12 +207,14 @@
   const loading = ref(false)
   const detailVisible = ref(false)
   const customerList = ref<any[]>([])
+  const categoryList = ref<any[]>([])
   const currentOrder = ref<any>(null)
   const selectedRows = ref<any[]>([])
 
   const searchForm = reactive({
     orderNo: '',
     customerId: undefined as number | undefined,
+    categoryId: undefined as number | undefined,
     status: undefined as string | undefined
   })
 
@@ -241,6 +254,14 @@
     }
   }
 
+  const loadCategories = async () => {
+    try {
+      categoryList.value = await getAllCategories()
+    } catch (error) {
+      console.error('Failed to load categories:', error)
+    }
+  }
+
   const loadData = async () => {
     loading.value = true
     try {
@@ -266,6 +287,7 @@
   const handleReset = () => {
     searchForm.orderNo = ''
     searchForm.customerId = undefined
+    searchForm.categoryId = undefined
     searchForm.status = undefined
     handleSearch()
   }
@@ -378,9 +400,6 @@
     currentOrder.value = row
     detailVisible.value = true
     setTimeout(() => {
-      const printContent = document.getElementById('printArea')
-      if (!printContent) return
-
       const printWindow = window.open('', '_blank')
       if (!printWindow) return
 
@@ -388,154 +407,186 @@
       const totalQuantity = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
       const totalAmount = row.totalAmount || 0
 
-      // 金额转中文大写
-      const amountToChinese = (amount: number): string => {
-        const digits = ['零', '壹', '贰', '叁', '肆', '伍', '陆', '柒', '捌', '玖']
-        const units = ['', '拾', '佰', '仟']
-        const bigUnits = ['', '万', '亿']
+      const now = new Date()
+      const printTime = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 
-        const intPart = Math.floor(amount)
-        const decPart = Math.round((amount - intPart) * 100)
-
-        let result = ''
-        let num = intPart
-        let unitIndex = 0
-
-        while (num > 0) {
-          const digit = num % 10
-          if (digit > 0) {
-            result =
-              digits[digit] + units[unitIndex % 4] + bigUnits[Math.floor(unitIndex / 4)] + result
-          }
-          num = Math.floor(num / 10)
-          unitIndex++
-        }
-
-        result += '元'
-
-        if (decPart > 0) {
-          const jiao = Math.floor(decPart / 10)
-          const fen = decPart % 10
-          if (jiao > 0) result += digits[jiao] + '角'
-          if (fen > 0) result += digits[fen] + '分'
-        } else {
-          result += '整'
-        }
-
-        return result
-      }
+      // 构建商品行HTML - 只显示有数据的商品，不留空行
+      const itemRows = items.map((item: any) => `
+        <tr>
+          <td style="text-align:center">${item.warehouseName || ''}</td>
+          <td>${item.productName || ''}</td>
+          <td style="text-align:center">${item.spec || ''}</td>
+          <td style="text-align:center">${item.brand || ''}</td>
+          <td style="text-align:center">${item.unit || ''}</td>
+          <td style="text-align:center">${item.quantity || 0}</td>
+          <td style="text-align:right">${item.price?.toFixed(2) || ''}</td>
+          <td style="text-align:right">${item.boxPrice?.toFixed(2) || ''}</td>
+          <td style="text-align:right">${item.amount?.toFixed(2) || ''}</td>
+        </tr>
+      `).join('')
 
       printWindow.document.write(`
         <!DOCTYPE html>
         <html>
         <head>
-          <title>采购单 - ${row.orderNo}</title>
+          <title>进货单 - ${row.orderNo}</title>
           <style>
-            @page { size: A4; margin: 10mm; }
-            body { font-family: SimSun, serif; font-size: 12px; line-height: 1.5; }
-            .header { text-align: center; margin-bottom: 15px; }
-            .header h2 { font-size: 18px; margin: 0; }
-            .info-row { display: flex; justify-content: space-between; margin: 5px 0; }
-            .info-row span { display: inline-block; }
-            table { width: 100%; border-collapse: collapse; margin: 10px 0; }
-            th, td { border: 1px solid #000; padding: 5px 8px; text-align: left; font-size: 11px; }
-            th { background-color: #f0f0f0; text-align: center; }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
-            .total-row { font-weight: bold; }
-            .footer { margin-top: 20px; }
-            .footer .info-row { margin: 8px 0; }
-            .note { margin-top: 15px; border: 1px solid #000; padding: 8px; font-size: 11px; }
-            .remark { margin-top: 10px; }
-            .page-info { text-align: right; margin-top: 10px; font-size: 10px; }
+            @page { 
+              size: 21.5cm 9.5cm; 
+              margin: 5mm; 
+            }
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              font-family: SimSun, 宋体, serif; 
+              font-size: 9pt; 
+              line-height: 1.4;
+              width: 21.5cm;
+              padding: 5mm;
+            }
+            .title {
+              text-align: center;
+              font-size: 14pt;
+              font-weight: bold;
+              margin-bottom: 2mm;
+            }
+            .subtitle {
+              text-align: center;
+              font-size: 8pt;
+              margin-bottom: 3mm;
+            }
+            table.info {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 2mm;
+              font-size: 8pt;
+            }
+            table.info td {
+              padding: 1mm 2mm;
+              white-space: nowrap;
+            }
+            table.info .label {
+              font-weight: bold;
+            }
+            table.info .value {
+              border-bottom: 1px solid #000;
+              min-width: 20mm;
+              display: inline-block;
+            }
+            table.detail {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 2mm;
+              font-size: 8pt;
+            }
+            table.detail th,
+            table.detail td {
+              border: 1px solid #000;
+              padding: 1mm 2mm;
+            }
+            table.detail th {
+              background-color: #f0f0f0;
+              font-weight: bold;
+              text-align: center;
+              white-space: nowrap;
+            }
+            table.detail td {
+              white-space: nowrap;
+            }
+            .total-row {
+              font-weight: bold;
+            }
+            .footer {
+              margin-top: 3mm;
+              font-size: 8pt;
+            }
+            .signature {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 5mm;
+            }
+            .signature-item {
+              flex: 1;
+              text-align: center;
+            }
+            .signature-item .line {
+              border-bottom: 1px solid #000;
+              height: 8mm;
+              margin-bottom: 1mm;
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h2>采 购 单</h2>
-          </div>
+          <div class="title">农安县烟花爆竹进货单（焰火老王店)</div>
+          <div class="subtitle">烟花爆竹属特殊商品，售出后如无质量问题，概不退货换货</div>
           
-          <div class="info-row">
-            <span>客户：${row.customerName || '________________'}</span>
-            <span>单据日期：${row.createdAt?.split(' ')[0] || '________________'}</span>
-          </div>
-          <div class="info-row">
-            <span>单据编号：${row.orderNo || '________________'}</span>
-            <span>店铺：${row.shopName || '________________'}</span>
-          </div>
+          <table class="info">
+            <tr>
+              <td><span class="label">供应商名称:</span> <span class="value">${row.customerName || ''}</span></td>
+              <td><span class="label">单据日期:</span> <span class="value">${row.createdAt?.split(' ')[0] || ''}</span></td>
+              <td><span class="label">单据编号</span> <span class="value">${row.orderNo || ''}</span></td>
+            </tr>
+            <tr>
+              <td><span class="label">联系电话:</span> <span class="value">${row.customerPhone || ''}</span></td>
+              <td><span class="label">打印时间:</span> <span class="value">${printTime}</span></td>
+              <td><span class="label">应付余额:</span> <span class="value"></span></td>
+            </tr>
+            <tr>
+              <td><span class="label">收货地址:</span> <span class="value">${row.deliveryAddress || ''}</span></td>
+              <td><span class="label">采购订单号:</span> <span class="value">${row.orderNo || ''}</span></td>
+              <td><span class="label">来源单据:</span> <span class="value"></span></td>
+            </tr>
+            <tr>
+              <td colspan="3"><span class="label">备注:</span> <span class="value">${row.remark || ''}</span></td>
+            </tr>
+          </table>
           
-          <table>
+          <table class="detail">
             <thead>
               <tr>
-                <th style="width:40px">编号</th>
-                <th style="width:80px">仓库名称</th>
-                <th>商品名称</th>
-                <th style="width:50px">数量</th>
-                <th style="width:40px">单位</th>
-                <th style="width:80px">单价</th>
-                <th style="width:100px">金额</th>
+                <th>仓库</th>
+                <th>存货名称</th>
+                <th>规格</th>
+                <th>品牌</th>
+                <th>单位</th>
+                <th>数量</th>
+                <th>单价</th>
+                <th>箱价</th>
+                <th>金额</th>
               </tr>
             </thead>
             <tbody>
-              ${items
-                .map(
-                  (item: any, index: number) => `
-                <tr>
-                  <td class="text-center">${index + 1}</td>
-                  <td>${item.warehouseName || ''}</td>
-                  <td>${item.productName || ''}</td>
-                  <td class="text-center">${item.quantity || 0}</td>
-                  <td class="text-center">${item.unit || ''}</td>
-                  <td class="text-right">${item.price?.toFixed(2) || '0.00'}</td>
-                  <td class="text-right">${item.amount?.toFixed(2) || '0.00'}</td>
-                </tr>
-              `
-                )
-                .join('')}
-              ${
-                items.length < 10
-                  ? Array(10 - items.length)
-                      .fill(
-                        '<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td><td></td><td></td></tr>'
-                      )
-                      .join('')
-                  : ''
-              }
+              ${itemRows}
             </tbody>
             <tfoot>
               <tr class="total-row">
-                <td colspan="3" class="text-right">小计：</td>
-                <td class="text-center">${totalQuantity}</td>
+                <td colspan="5" style="text-align:right">小计</td>
+                <td style="text-align:center">${totalQuantity}</td>
                 <td></td>
                 <td></td>
-                <td class="text-right">¥${totalAmount.toFixed(2)}</td>
+                <td style="text-align:right">${totalAmount.toFixed(2)}</td>
               </tr>
             </tfoot>
           </table>
           
-          <div class="info-row total-row">
-            <span>合计：人民币 ${amountToChinese(totalAmount)}</span>
-            <span>件数：${totalQuantity}件</span>
-          </div>
-          
           <div class="footer">
-            <div class="info-row">
-              <span>制单人：${row.operator || '（填写）'}</span>
-              <span>业务员：${row.salesperson || '（账号名）'}</span>
-              <span>联系电话：0434-76787333 1564343300</span>
+            <div class="signature">
+              <div class="signature-item">
+                <div class="line"></div>
+                <div>制单人: ${row.operator || ''}</div>
+              </div>
+              <div class="signature-item">
+                <div class="line"></div>
+                <div>司机签字:</div>
+              </div>
+              <div class="signature-item">
+                <div class="line"></div>
+                <div>库管签字:</div>
+              </div>
+              <div class="signature-item">
+                <div class="line"></div>
+                <div>供应商签字:</div>
+              </div>
             </div>
-          </div>
-          
-          <div class="note">
-            <strong>注意：</strong>惊爆价、特价、儿童产品、二次封箱、外箱破损、写字、不退不换！
-          </div>
-          
-          <div class="remark">
-            备注：${row.remark || '（填写）'}
-          </div>
-          
-          <div class="page-info">
-            第（1）页/共（1）页
           </div>
         </body>
         </html>
@@ -547,6 +598,7 @@
 
   onMounted(() => {
     loadCustomers()
+    loadCategories()
     loadData()
   })
 </script>

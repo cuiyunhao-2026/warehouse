@@ -272,3 +272,30 @@ export function fetchGetSalesStats() {
 export function fetchGetPurchaseStats() {
   return api.get<any>({ url: '/api/dashboard/purchase-stats' })
 }
+
+/** ==================== 供应商管理 API ==================== */
+
+/** 获取供应商列表 */
+export function fetchGetSupplierList(params: any) {
+  return api.get<any>({ url: '/api/suppliers', params })
+}
+
+/** 获取所有供应商 */
+export function fetchGetAllSuppliers() {
+  return api.get<any[]>({ url: '/api/suppliers/all' })
+}
+
+/** 添加供应商 */
+export function fetchAddSupplier(params: any) {
+  return api.post<void>({ url: '/api/suppliers', data: params, showSuccessMessage: true })
+}
+
+/** 更新供应商 */
+export function fetchUpdateSupplier(id: number, params: any) {
+  return api.put<void>({ url: `/api/suppliers/${id}`, data: params, showSuccessMessage: true })
+}
+
+/** 删除供应商 */
+export function fetchDeleteSupplier(id: number) {
+  return api.del<void>({ url: `/api/suppliers/${id}`, showSuccessMessage: true })
+}

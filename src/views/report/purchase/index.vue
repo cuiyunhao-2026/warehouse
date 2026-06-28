@@ -43,7 +43,7 @@
           </template>
           <ElTable :data="stats.topSuppliers" border>
             <ElTableColumn type="index" label="排名" width="60" />
-            <ElTableColumn prop="name" label="供应商" min-width="150" />
+            <ElTableColumn prop="supplierName" label="供应商" min-width="150" />
             <ElTableColumn prop="orderCount" label="订单数" width="80" align="center" />
             <ElTableColumn prop="totalAmount" label="总金额" width="120" align="right">
               <template #default="{ row }">¥{{ row.totalAmount.toLocaleString() }}</template>

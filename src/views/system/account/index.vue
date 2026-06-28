@@ -1,12 +1,55 @@
 <!-- 账号管理页面 -->
 <template>
   <div class="account-page art-full-height">
-    <ElCard shadow="never">
+    <!-- 搜索栏 -->
+    <ElCard class="art-search-card" shadow="never">
+      <ElForm :model="searchForm" inline>
+        <ElFormItem label="用户名">
+          <ElInput v-model="searchForm.username" placeholder="请输入用户名" clearable />
+        </ElFormItem>
+        <ElFormItem label="邮箱">
+          <ElInput v-model="searchForm.email" placeholder="请输入邮箱" clearable />
+        </ElFormItem>
+        <ElFormItem label="手机号">
+          <ElInput v-model="searchForm.phone" placeholder="请输入手机号" clearable />
+        </ElFormItem>
+        <ElFormItem label="角色">
+          <ElSelect v-model="searchForm.role" placeholder="请选择角色" clearable style="width:150px">
+            <ElOption label="超级管理员" value="R_SUPER" />
+            <ElOption label="管理员" value="R_ADMIN" />
+          </ElSelect>
+        </ElFormItem>
+        <ElFormItem>
+          <ElButton type="primary" @click="handleSearch">
+            <ArtSvgIcon icon="ri:search-line" class="mr-1" />
+            搜索
+          </ElButton>
+          <ElButton @click="handleResetSearch">
+            <ArtSvgIcon icon="ri:refresh-line" class="mr-1" />
+            重置
+          </ElButton>
+        </ElFormItem>
+      </ElForm>
+    </ElCard>
+
+    <!-- 表格区域 -->
+    <ElCard class="art-table-card" shadow="never">
       <template #header>
         <div class="card-header">
-          <span>账号管理</span>
           <div>
-            <ElTag type="info" class="mr-2">共 {{ userList.length }} 个账号</ElTag>
+            <span>账号列表</span>
+            <ElTag type="info" class="ml-2">共 {{ filteredUserList.length }} 个账号</ElTag>
+          </div>
+          <div>
+            <ElButton
+              v-if="isSuperAdmin && selectedRows.length > 0"
+              type="danger"
+              @click="handleBatchDelete"
+              class="mr-2"
+            >
+              <ArtSvgIcon icon="ri:delete-bin-line" class="mr-1" />
+              批量删除 ({{ selectedRows.length }})
+            </ElButton>
             <ElButton type="primary" @click="handleAddUser" v-if="isSuperAdmin">
               <ArtSvgIcon icon="ri:user-add-line" class="mr-1" />
               添加账号
@@ -15,7 +58,8 @@
         </div>
       </template>
 
-      <ElTable :data="userList" v-loading="loading" border stripe>
+      <ElTable :data="pagedUserList" v-loading="loading" border stripe @selection-change="handleSelectionChange">
+        <ElTableColumn type="selection" width="50" />
         <ElTableColumn prop="username" label="用户名" width="120" />
         <ElTableColumn prop="email" label="邮箱" min-width="180" show-overflow-tooltip />
         <ElTableColumn prop="phone" label="手机号" width="130" />
@@ -75,6 +119,16 @@
           </template>
         </ElTableColumn>
       </ElTable>
+
+      <div class="art-pagination-wrapper">
+        <ElPagination
+          v-model:current-page="pagination.current"
+          v-model:page-size="pagination.size"
+          :total="filteredUserList.length"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+        />
+      </div>
     </ElCard>
 
     <!-- 添加用户弹窗 -->
@@ -220,7 +274,7 @@
 
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted } from 'vue'
-  import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+  import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
   import {
     fetchGetAllUsers,
     fetchAddUser,
@@ -248,6 +302,103 @@
   const passwordFormRef = ref<FormInstance>()
   const userList = ref<any[]>([])
   const shopList = ref<any[]>([])
+  const selectedRows = ref<any[]>([])
+
+  // 搜索表单
+  const searchForm = reactive({
+    username: '',
+    email: '',
+    phone: '',
+    role: ''
+  })
+
+  // 分页
+  const pagination = reactive({
+    current: 1,
+    size: 10
+  })
+
+  // 过滤后的用户列表
+  const filteredUserList = computed(() => {
+    let list = userList.value
+    if (searchForm.username) {
+      const kw = searchForm.username.toLowerCase()
+      list = list.filter(u => (u.username || '').toLowerCase().includes(kw))
+    }
+    if (searchForm.email) {
+      const kw = searchForm.email.toLowerCase()
+      list = list.filter(u => (u.email || '').toLowerCase().includes(kw))
+    }
+    if (searchForm.phone) {
+      list = list.filter(u => (u.phone || '').includes(searchForm.phone))
+    }
+    if (searchForm.role) {
+      list = list.filter(u => (u.roles || []).includes(searchForm.role))
+    }
+    return list
+  })
+
+  // 分页后的用户列表
+  const pagedUserList = computed(() => {
+    const start = (pagination.current - 1) * pagination.size
+    return filteredUserList.value.slice(start, start + pagination.size)
+  })
+
+  const handleSearch = () => {
+    pagination.current = 1
+  }
+
+  const handleResetSearch = () => {
+    searchForm.username = ''
+    searchForm.email = ''
+    searchForm.phone = ''
+    searchForm.role = ''
+    pagination.current = 1
+  }
+
+  const handleSelectionChange = (rows: any[]) => {
+    selectedRows.value = rows
+  }
+
+  const handleBatchDelete = async () => {
+    if (selectedRows.value.length === 0) {
+      ElMessage.warning('请先选择要删除的账号')
+      return
+    }
+    // 过滤掉默认用户
+    const deletableIds = selectedRows.value
+      .filter(row => !isDefaultUser(row.username))
+      .map(row => row.id)
+    
+    if (deletableIds.length === 0) {
+      ElMessage.warning('选中的账号均不可删除（admin/user为默认账号）')
+      return
+    }
+
+    try {
+      await ElMessageBox.confirm(
+        `确定要批量删除 ${deletableIds.length} 个账号吗？此操作不可恢复！`,
+        '批量删除确认',
+        { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+
+    loading.value = true
+    try {
+      for (const id of deletableIds) {
+        await fetchDeleteUser(id)
+      }
+      ElMessage.success(`成功删除 ${deletableIds.length} 个账号`)
+      selectedRows.value = []
+      loadUsers()
+    } catch (error: any) {
+      ElMessage.error(error.message || '批量删除失败')
+    } finally {
+      loading.value = false
+    }
+  }
 
   const editForm = reactive({
     id: 0,
@@ -289,7 +440,7 @@
   const addRules: FormRules = {
     username: [
       { required: true, message: '请输入用户名', trigger: 'blur' },
-      { min: 3, max: 20, message: '长度在 3 到 20 个字符', trigger: 'blur' }
+      { min: 1, message: '用户名不能为空', trigger: 'blur' }
     ],
     password: [
       { required: true, message: '请输入密码', trigger: 'blur' },
@@ -492,10 +643,28 @@
 
 <style scoped lang="scss">
   .account-page {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+
+    .art-search-card {
+      margin-bottom: 0;
+    }
+
+    .art-table-card {
+      flex: 1;
+    }
+
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
+    }
+
+    .art-pagination-wrapper {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 16px;
     }
 
     .mr-1 {
@@ -504,6 +673,10 @@
 
     .mr-2 {
       margin-right: 8px;
+    }
+
+    .ml-2 {
+      margin-left: 8px;
     }
   }
 </style>
